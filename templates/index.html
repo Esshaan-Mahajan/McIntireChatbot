@@ -47,10 +47,6 @@
       background-color: #e9ecef;
       color: #333;
     }
-    .message-meta {
-      font-size: 0.8rem;
-      color: #777;
-    }
     .message-image {
       margin-top: 10px;
       max-width: 100%;
@@ -63,6 +59,10 @@
       padding: 20px;
       border-radius: 10px;
     }
+    .voice-controls {
+      margin-bottom: 20px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -74,6 +74,14 @@
 
   <div class="container chat-container">
     <div id="chat-box"></div>
+    
+    <!-- Voice Assistant Controls -->
+    <div class="voice-controls">
+      <button id="voice-toggle" class="btn btn-secondary">Start Voice Chat</button>
+      <p id="voice-status" class="mt-2 text-muted">Voice chat is off.</p>
+    </div>
+    
+    <!-- Traditional Chat Form -->
     <form id="chat-form" enctype="multipart/form-data" class="card card-form shadow-sm">
       <div class="mb-3">
         <label for="text" class="form-label">Your Message:</label>
@@ -84,8 +92,16 @@
         <input type="file" id="image" name="image" class="form-control" accept="image/*">
       </div>
       <div class="mb-3">
+        <label for="video" class="form-label">Upload a Video:</label>
+        <input type="file" id="video" name="video" class="form-control" accept="video/*">
+      </div>
+      <div class="mb-3">
         <label for="audio" class="form-label">Upload an Audio File:</label>
         <input type="file" id="audio" name="audio" class="form-control" accept="audio/*">
+      </div>
+      <div class="mb-3">
+        <label for="document" class="form-label">Upload a Document (.txt or .pdf):</label>
+        <input type="file" id="document" name="document" class="form-control" accept=".txt,.pdf">
       </div>
       <div class="mb-3">
         <label class="form-label">Output Type:</label><br>
@@ -111,13 +127,12 @@
   <!-- jQuery -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script>
+    // Traditional Chat Form Submission
     $("#chat-form").submit(function(e) {
       e.preventDefault();
       var formData = new FormData(this);
       var messageText = $("#text").val() || "File(s) submitted";
-      $("#chat-box").append(
-        "<div class='chat-message user-message'><div class='message-bubble'><strong>You:</strong> " + messageText + "</div></div>"
-      );
+      $("#chat-box").append("<div class='chat-message user-message'><div class='message-bubble'><strong>You:</strong> " + messageText + "</div></div>");
       
       $.ajax({
         type: "POST",
@@ -136,9 +151,7 @@
           if (data.audio_url) {
             botContent += "<div class='audio-player'><audio controls src='" + data.audio_url + "'></audio></div>";
           }
-          $("#chat-box").append(
-            "<div class='chat-message bot-message'><div class='message-bubble'>" + botContent + "</div></div>"
-          );
+          $("#chat-box").append("<div class='chat-message bot-message'><div class='message-bubble'>" + botContent + "</div></div>");
           $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
         },
         error: function(xhr) {
@@ -147,148 +160,89 @@
         }
       });
     });
-  </script>
-</body>
-</html>
 
-
-
-
-
-
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Multimodal Chatbot</title>
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    #chat-box {
-      border: 1px solid #ccc;
-      padding: 10px;
-      width: 600px;
-      height: 400px;
-      overflow-y: scroll;
-      margin-bottom: 10px;
+    // Voice Assistant Functionality
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    let voiceChatActive = false;
+    
+    $("#voice-toggle").click(function() {
+      if (!voiceChatActive) {
+        startVoiceChat();
+      } else {
+        stopVoiceChat();
+      }
+    });
+    
+    function startVoiceChat() {
+      voiceChatActive = true;
+      $("#voice-toggle").text('Stop Voice Chat');
+      $("#voice-status").text('Voice chat is active. Speak now...');
+      recognition.start();
     }
-    #chat-box div { margin-bottom: 8px; }
-    .user { font-weight: bold; }
-    .bot { color: blue; }
-  </style>
-</head>
-<body>
-  <h1>Multimodal Chatbot</h1>
-  <div id="chat-box"></div>
-  <form id="chat-form" enctype="multipart/form-data">
-    <label for="text">Text Input:</label><br>
-    <textarea id="text" name="text" placeholder="Type your message here..." rows="3" cols="60"></textarea><br><br>
-
-    <label for="image">Image Input:</label>
-    <input type="file" id="image" name="image" accept="image/*"><br><br>
-
-    <label for="audio">Audio Input:</label>
-    <input type="file" id="audio" name="audio" accept="audio/*"><br><br>
-
-    <label>Output Type:</label><br>
-    <input type="radio" id="output_text" name="output_type" value="text" checked>
-    <label for="output_text">Text</label><br>
-    <input type="radio" id="output_image" name="output_type" value="image">
-    <label for="output_image">Image</label><br>
-    <input type="radio" id="output_speech" name="output_type" value="speech">
-    <label for="output_speech">Speech</label><br><br>
-
-    <button type="submit">Send</button>
-  </form>
-
-  <script>
-    $("#chat-form").submit(function(e){
-      e.preventDefault();
-      var formData = new FormData(this);
-      // Display a simple preview in the chat box
-      $("#chat-box").append("<div class='user'><strong>You:</strong> " + ($("#text").val() || "Sent a file") + "</div>");
+    
+    function stopVoiceChat() {
+      voiceChatActive = false;
+      $("#voice-toggle").text('Start Voice Chat');
+      $("#voice-status").text('Voice chat is off.');
+      recognition.stop();
+    }
+    
+    recognition.onresult = function(event) {
+      let transcript = event.results[0][0].transcript;
+      $("#chat-box").append("<div class='chat-message user-message'><div class='message-bubble'><strong>You (voice):</strong> " + transcript + "</div></div>");
       
+      // Send recognized text to the backend, forcing speech output.
+      let formData = new FormData();
+      formData.append("text", transcript);
+      formData.append("output_type", "speech");
       $.ajax({
         type: "POST",
         url: "/chat",
         data: formData,
         contentType: false,
         processData: false,
-        success: function(data){
-          if(data.response) {
-            $("#chat-box").append("<div class='bot'><strong>Bot (text):</strong> " + data.response + "</div>");
+        success: function(data) {
+          var botContent = "";
+          if (data.response) {
+            botContent += "<div class='mb-2'><strong>Bot:</strong> " + data.response + "</div>";
+            speakText(data.response);
           }
-          if(data.image_url) {
-            $("#chat-box").append("<div class='bot'><strong>Bot (image):</strong><br><img src='" + data.image_url + "' alt='Generated Image' width='300'></div>");
+          if (data.image_url) {
+            botContent += "<div><img class='message-image' src='" + data.image_url + "' alt='Generated Image'></div>";
           }
-          if(data.audio_url) {
-            $("#chat-box").append("<div class='bot'><strong>Bot (speech):</strong><br><audio controls src='" + data.audio_url + "'></audio></div>");
+          if (data.audio_url) {
+            botContent += "<div class='audio-player'><audio controls src='" + data.audio_url + "'></audio></div>";
           }
+          $("#chat-box").append("<div class='chat-message bot-message'><div class='message-bubble'>" + botContent + "</div></div>");
           $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
         },
-        error: function(xhr){
+        error: function(xhr) {
           let err = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : "Unknown error";
-          $("#chat-box").append("<div style='color:red;'><strong>Error:</strong> " + err + "</div>");
+          $("#chat-box").append("<div class='chat-message bot-message text-danger'><div class='message-bubble'><strong>Error:</strong> " + err + "</div></div>");
         }
       });
-    });
+    }
+    
+    function speakText(text) {
+      let utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      speechSynthesis.speak(utterance);
+    }
+    
+    recognition.onerror = function(event) {
+      console.error("Speech recognition error", event);
+    }
+    
+    recognition.onend = function() {
+      if (voiceChatActive) {
+        recognition.start();
+      }
+    }
   </script>
 </body>
-</html> -->
-
-
-
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>ChatGPT Chatbot</title>
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        #chat-box {
-            border: 1px solid #ccc;
-            padding: 10px;
-            width: 400px;
-            height: 300px;
-            overflow-y: scroll;
-            margin-bottom: 10px;
-        }
-        #chat-box div { margin-bottom: 8px; }
-        .user { font-weight: bold; }
-        .bot { color: blue; }
-    </style>
-</head>
-<body>
-    <h1>ChatGPT Chatbot</h1>
-    <div id="chat-box"></div>
-    <form id="chat-form">
-        <input type="text" id="message" name="message" placeholder="Type your message..." style="width:300px;" autocomplete="off" required/>
-        <button type="submit">Send</button>
-    </form>
-
-    <script>
-        $("#chat-form").submit(function(e){
-            e.preventDefault();
-            var message = $("#message").val().trim();
-            if(message === "") return;
-            $("#chat-box").append("<div class='user'><strong>You:</strong> " + message + "</div>");
-            $("#message").val("");
-
-            $.ajax({
-                type: "POST",
-                url: "/chat",
-                data: { message: message },
-                success: function(data){
-                    $("#chat-box").append("<div class='bot'><strong>Bot:</strong> " + data.response + "</div>");
-                    $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
-                },
-                error: function(xhr){
-                    let err = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : "Unknown error";
-                    $("#chat-box").append("<div style='color:red;'><strong>Error:</strong> " + err + "</div>");
-                }
-            });
-        });
-    </script>
-</body>
-</html> -->
+</html>
