@@ -4,6 +4,7 @@ os.environ["AUTOGEN_USE_DOCKER"] = "false"
 
 import uuid
 import base64
+import traceback
 from io import BytesIO
 from flask import Flask, render_template, request, jsonify, session
 from openai import OpenAI
@@ -18,10 +19,10 @@ DetectorFactory.seed = 0
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "supersecret")
 
-# OpenAI client
+# Initialize OpenAI client
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# ——— AutoGen Agents ——————————————————————————
+# ——— Define AutoGen Agents ——————————————————————————————
 
 user_proxy = UserProxyAgent(
     name="UserProxyAgent",
@@ -56,15 +57,13 @@ companion_agent = AssistantAgent(
     )
 )
 
-# ——— Tool Functions ——————————————————————————
+# ——— Tool Functions ——————————————————————————————
 
 def store_mood(mood: str, user_id: str = "default_user") -> str:
-    """Log a mood entry."""
     log_mood(user_id, mood)
     return f"✅ Logged mood: {mood}"
 
 def retrieve_mood_history(user_id: str = "default_user") -> str:
-    """Retrieve mood history."""
     history = get_mood_history(user_id)
     if not history:
         return "No mood history found."
@@ -97,26 +96,26 @@ def index():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    # Session management
-    sid = session.get("sid")
-    if not sid:
-        sid = str(uuid.uuid4())
-        session["sid"] = sid
-    proxy = user_sessions.setdefault(sid, user_proxy)
+    try:
+        # Manage per-user proxy state
+        sid = session.get("sid")
+        if not sid:
+            sid = str(uuid.uuid4())
+            session["sid"] = sid
+        proxy = user_sessions.setdefault(sid, user_proxy)
 
-    # Inputs & flags
-    text_input    = request.form.get("text", "").strip()
-    image_file    = request.files.get("image")
-    video_file    = request.files.get("video")
-    audio_file    = request.files.get("audio")
-    document_file = request.files.get("document")
-    output_type   = request.form.get("output_type", "text")
-    restrict      = request.form.get("restrict_scope") == "on"
-    mh_mode       = request.form.get("mh_mode") == "on"
+        # Gather inputs & flags
+        text_input    = request.form.get("text", "").strip()
+        image_file    = request.files.get("image")
+        video_file    = request.files.get("video")
+        audio_file    = request.files.get("audio")
+        document_file = request.files.get("document")
+        output_type   = request.form.get("output_type", "text")
+        restrict      = request.form.get("restrict_scope") == "on"
+        mh_mode       = request.form.get("mh_mode") == "on"
 
-    # 1) Mental-Health Multi-Agent Mode
-    if mh_mode and text_input:
-        try:
+        # 1) Mental-Health Multi-Agent Mode
+        if mh_mode and text_input:
             reply = proxy.send(
                 user_message=text_input,
                 recipients=[companion_agent, mood_tracker, suggestion_agent]
@@ -128,75 +127,63 @@ def chat():
             except:
                 pass
             return jsonify({"response": bot_text, "language": lang})
-        except Exception as e:
-            return jsonify({"error": f"MultiAgent error: {e}"}), 500
 
-    # 2) Multimodal Pipeline
+        # 2) Multimodal Pipeline
 
-    # IMAGE
-    if image_file:
-        content = []
-        if text_input:
-            content.append({"type": "text", "text": text_input})
-        else:
-            content.append({"type": "text", "text": "What's in this image?"})
-        img_bytes = image_file.read()
-        b64 = base64.b64encode(img_bytes).decode()
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:{image_file.content_type};base64,{b64}", "detail": "auto"}
-        })
-        try:
+        # IMAGE input
+        if image_file:
+            content = []
+            if text_input:
+                content.append({"type": "text", "text": text_input})
+            else:
+                content.append({"type": "text", "text": "What's in this image?"})
+            img_bytes = image_file.read()
+            b64 = base64.b64encode(img_bytes).decode()
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{image_file.content_type};base64,{b64}", "detail": "auto"}
+            })
             resp = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": content}],
                 max_tokens=300
             )
             bot_text = resp.choices[0].message.content.strip()
-        except Exception as e:
-            return jsonify({"error": "Vision API failed: " + str(e)}), 500
 
-        if output_type == "speech":
-            fn = f"static/audio_{uuid.uuid4().hex}.mp3"
-            tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
-            tts.stream_to_file(fn)
-            return jsonify({"response": bot_text, "audio_url": fn})
-        if output_type == "image":
-            img = client.images.generate(
-                model="dall-e-3",
-                prompt=bot_text,
-                size="1024x1024",
-                quality="standard",
-                n=1
-            )
-            return jsonify({"response": "Image generated", "image_url": img.data[0].url})
-        return jsonify({"response": bot_text})
+            if output_type == "speech":
+                fn = f"static/audio_{uuid.uuid4().hex}.mp3"
+                tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
+                tts.stream_to_file(fn)
+                return jsonify({"response": bot_text, "audio_url": fn})
+            if output_type == "image":
+                img = client.images.generate(
+                    model="dall-e-3",
+                    prompt=bot_text,
+                    size="1024x1024",
+                    quality="standard",
+                    n=1
+                )
+                return jsonify({"response": "Image generated", "image_url": img.data[0].url})
+            return jsonify({"response": bot_text})
 
-    # VIDEO → Whisper
-    if video_file:
-        try:
+        # VIDEO → Whisper
+        if video_file:
             ft = (video_file.filename, video_file.stream, video_file.content_type)
             transcription = client.audio.transcriptions.create(
                 model="whisper-1", file=ft, response_format="text"
             )
             user_input = transcription.strip()
-        except Exception as e:
-            return jsonify({"error": "Video transcription failed: " + str(e)}), 500
 
-    # AUDIO → Whisper
-    elif audio_file:
-        try:
+        # AUDIO → Whisper
+        elif audio_file:
             ft = (audio_file.filename, audio_file.stream, audio_file.content_type)
             transcription = client.audio.transcriptions.create(
                 model="whisper-1", file=ft, response_format="text"
             )
             user_input = transcription.strip()
-        except Exception as e:
-            return jsonify({"error": "Audio transcription failed: " + str(e)}), 500
 
-    # DOCUMENT
-    elif document_file:
-        try:
+        # DOCUMENT
+        elif document_file:
             fn = document_file.filename.lower()
             if fn.endswith(".txt"):
                 user_input = document_file.read().decode("utf-8").strip()
@@ -206,17 +193,14 @@ def chat():
                 user_input = text.strip()
             else:
                 return jsonify({"error": "Unsupported document format."}), 400
-        except Exception as e:
-            return jsonify({"error": "Document processing failed: " + str(e)}), 500
 
-    # TEXT
-    elif text_input:
-        user_input = text_input
-    else:
-        return jsonify({"error": "No input provided"}), 400
+        # TEXT
+        elif text_input:
+            user_input = text_input
+        else:
+            return jsonify({"error": "No input provided"}), 400
 
-    # Fallback ChatCompletion (multilingual)
-    try:
+        # Fallback ChatCompletion (multilingual)
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -228,24 +212,28 @@ def chat():
             max_tokens=150
         )
         bot_text = resp.choices[0].message.content.strip()
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
-    if output_type == "speech":
-        fn = f"static/audio_{uuid.uuid4().hex}.mp3"
-        tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
-        tts.stream_to_file(fn)
-        return jsonify({"response": bot_text, "audio_url": fn})
-    if output_type == "image":
-        img = client.images.generate(
-            model="dall-e-3",
-            prompt=user_input,
-            size="1024x1024",
-            quality="standard",
-            n=1
-        )
-        return jsonify({"response": "Image generated", "image_url": img.data[0].url})
-    return jsonify({"response": bot_text})
+        if output_type == "speech":
+            fn = f"static/audio_{uuid.uuid4().hex}.mp3"
+            tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
+            tts.stream_to_file(fn)
+            return jsonify({"response": bot_text, "audio_url": fn})
+        if output_type == "image":
+            img = client.images.generate(
+                model="dall-e-3",
+                prompt=user_input,
+                size="1024x1024",
+                quality="standard",
+                n=1
+            )
+            return jsonify({"response": "Image generated", "image_url": img.data[0].url})
+
+        return jsonify({"response": bot_text})
+
+    except Exception as e:
+        # Log full traceback for debugging
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": "Server error: " + str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
