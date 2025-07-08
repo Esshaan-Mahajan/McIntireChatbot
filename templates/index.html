@@ -75,18 +75,26 @@
         <label class="form-label">Upload Document (.txt, .pdf):</label>
         <input type="file" id="document" name="document" class="form-control" accept=".txt,.pdf">
       </div>
+
       <div class="form-check form-switch mb-3">
         <input class="form-check-input" type="checkbox" id="restrict_scope" name="restrict_scope">
         <label class="form-check-label" for="restrict_scope">
           Restrict answers to the uploaded document only
         </label>
       </div>
+
       <div class="form-check form-switch mb-3">
         <input class="form-check-input" type="checkbox" id="mh_mode" name="mh_mode">
         <label class="form-check-label" for="mh_mode">
           Mental-Health Assistant Mode
         </label>
       </div>
+
+      <!-- Mode Indicator -->
+      <p class="fw-bold">
+        Current Mode: <span id="mode-indicator" class="text-primary">General Chat</span>
+      </p>
+
       <div class="mb-3">
         <label class="form-label">Output Type:</label><br>
         <label class="me-3"><input type="radio" name="output_type" value="text" checked> Text</label>
@@ -105,7 +113,14 @@
 
   <script>
   $(function() {
-    // — Helpers —
+    // Update mode indicator when the switch toggles
+    function updateModeIndicator() {
+      const isMH = $("#mh_mode").is(":checked");
+      $("#mode-indicator").text(isMH ? "Mental-Health Assistant" : "General Chat");
+    }
+    $("#mh_mode").on("change", updateModeIndicator);
+    updateModeIndicator();
+
     function renderBot(data) {
       let html = "";
       if (data.response) html += `<div><strong>Bot:</strong> ${data.response}</div>`;
@@ -139,7 +154,7 @@
       });
     }
 
-    // — Chat Form Submission —
+    // Chat form submission
     $("#chat-form").submit(function(e) {
       e.preventDefault();
       const fd = new FormData(this);
@@ -156,7 +171,7 @@
       });
     });
 
-    // — Voice Chat Toggle —
+    // Voice chat
     const Rec = window.SpeechRecognition||window.webkitSpeechRecognition;
     if (Rec) {
       const rec = new Rec();
@@ -192,10 +207,9 @@
       rec.onend = () => { if (vOn) rec.start(); };
     }
 
-    // — On-Demand Camera & Gesture Detection —
+    // On-demand camera & gesture detection
     let camOn=false, stream=null, handModel=null, faceModel=null, loopId=null;
     let lastGesture=null, lastFace=false;
-
     $("#camera-toggle").click(async function(){
       const btn = $(this), video = document.getElementById("camera");
       if (!camOn) {
@@ -212,14 +226,12 @@
           if (!faceModel) faceModel = await facemesh.load();
           const detect = async () => {
             if (!camOn) return;
-            // hands
             const hands = await handModel.estimateHands(video, true);
             if (hands.length) {
               const lm = hands[0].landmarks;
               const g  = lm[4][1] < lm[2][1] ? "thumbs_up" : "thumbs_down";
               if (g!==lastGesture) { lastGesture=g; appendGesture(g); }
             } else lastGesture=null;
-            // face
             const faces = await faceModel.estimateFaces(video);
             const hasF = faces.length>0;
             if (hasF && !lastFace) { lastFace=true; appendGesture("face_detected"); }
