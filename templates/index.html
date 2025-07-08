@@ -9,23 +9,15 @@
     body { background: #f2f2f2; font-family: sans-serif; }
     .chat-container { max-width:800px; margin:20px auto; }
     #chat-box {
-      background:#fff;
-      border:1px solid #ddd;
-      border-radius:10px;
-      height:350px;
-      overflow-y:auto;
-      padding:20px;
-      margin-bottom:15px;
+      background:#fff; border:1px solid #ddd; border-radius:10px;
+      height:350px; overflow-y:auto; padding:20px; margin-bottom:15px;
     }
     .chat-message { margin-bottom:15px; }
     .user-message { text-align:right; }
     .bot-message  { text-align:left;  }
     .bubble {
-      display:inline-block;
-      padding:10px 15px;
-      border-radius:20px;
-      max-width:70%;
-      word-wrap:break-word;
+      display:inline-block; padding:10px 15px; border-radius:20px;
+      max-width:70%; word-wrap:break-word;
     }
     .user-message .bubble { background:#0d6efd; color:#fff }
     .bot-message  .bubble { background:#e9ecef; color:#333 }
@@ -33,10 +25,7 @@
     .audio-player  { margin-top:10px; }
     .voice-controls { text-align:center; margin-bottom:15px; }
     video#camera {
-      display:block;
-      margin:0 auto 10px;
-      border:1px solid #ccc;
-      border-radius:10px;
+      display:block; margin:0 auto 10px; border:1px solid #ccc; border-radius:10px;
     }
   </style>
 </head>
@@ -80,7 +69,7 @@
       </div>
       <div class="mb-3">
         <label class="form-label">Audio:</label>
-        <input type="file" id="	audio"` name="audio" class="form-control" accept="audio/*">
+        <input type="file" id="audio" name="audio" class="form-control" accept="audio/*">
       </div>
       <div class="mb-3">
         <label class="form-label">Document (.txt, .pdf):</label>
@@ -110,7 +99,7 @@
 
   <script>
   $(function() {
-    // Render bot replies
+    // --- Helpers ---
     function renderBot(data) {
       let html = "";
       if (data.response) html += `<div><strong>Bot:</strong> ${data.response}</div>`;
@@ -125,72 +114,120 @@
       }
     }
 
-    // Chat form submission
+    function appendGesture(name) {
+      $("#chat-box").append(
+        `<div class="chat-message user-message"><div class="bubble"><em>[${name}]</em></div></div>`
+      );
+      $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
+      const fd = new FormData();
+      fd.append("text", `[${name}]`);
+      fd.append("output_type", "text");
+      if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
+      $.ajax({
+        type: "POST",
+        url: "/chat",
+        data: fd,
+        contentType: false,
+        processData: false,
+        success: renderBot
+      });
+    }
+
+    // --- Chat Form ---
     $("#chat-form").submit(function(e) {
       e.preventDefault();
       const fd = new FormData(this);
       if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
       const msg = $("#text").val() || "File(s) submitted";
-      $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><strong>You:</strong> ${msg}</div></div>`);
+      $("#chat-box").append(
+        `<div class="chat-message user-message"><div class="bubble"><strong>You:</strong> ${msg}</div></div>`
+      );
       $.ajax({
-        type: "POST", url: "/chat", data: fd,
-        contentType: false, processData: false,
+        type: "POST",
+        url: "/chat",
+        data: fd,
+        contentType: false,
+        processData: false,
         success: renderBot
       });
     });
 
-    // Voice chat toggle
+    // --- Voice Chat ---
     const Rec = window.SpeechRecognition||window.webkitSpeechRecognition;
     if (Rec) {
       const rec = new Rec();
-      rec.lang='en-US'; rec.interimResults=false;
-      let vOn=false;
+      rec.lang = 'en-US'; rec.interimResults = false;
+      let vOn = false;
       $("#voice-toggle").click(() => {
         if (!vOn) {
-          rec.start(); vOn=true;
+          rec.start(); vOn = true;
           $("#voice-toggle").text("Stop Voice Chat");
           $("#voice-status").text("Voice chat is active. Speak now...");
         } else {
-          rec.stop(); vOn=false;
+          rec.stop(); vOn = false;
           $("#voice-toggle").text("Start Voice Chat");
           $("#voice-status").text("Voice chat is off.");
         }
       });
       rec.onresult = e => {
         const t = e.results[0][0].transcript;
-        $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><strong>You (voice):</strong> ${t}</div></div>`);
+        $("#chat-box").append(
+          `<div class="chat-message user-message"><div class="bubble"><strong>You (voice):</strong> ${t}</div></div>`
+        );
         const fd = new FormData();
         fd.append("text", t);
         fd.append("output_type", "speech");
         if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
-        $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
+        $.ajax({
+          type: "POST",
+          url: "/chat",
+          data: fd,
+          contentType: false,
+          processData: false,
+          success: renderBot
+        });
       };
       rec.onend = () => { if (vOn) rec.start(); };
     }
 
-    // On-demand camera & detection
-    let camOn=false, stream=null, handModel=null, faceModel=null, loopId=null;
-    let lastGesture=null, lastFace=false;
+    // --- On-Demand Camera & Gesture Detection ---
+    let camOn = false,
+        stream = null,
+        handModel = null,
+        faceModel = null,
+        loopId = null;
+    let lastGesture = null, lastFace = false;
 
-    $("#camera-toggle").click(async function(){
+    $("#camera-toggle").click(async function() {
+      const btn = $(this);
       const video = document.getElementById("camera");
+
       if (!camOn) {
-        camOn=true;
-        $(this).text("Stop Camera Control");
+        camOn = true;
+        btn.text("Stop Camera Control");
         $("#camera-status").text("Camera control is active.");
+
         try {
+          // 1) getUserMedia
           if (!stream) {
-            stream = await navigator.mediaDevices.getUserMedia({video:true});
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
             video.srcObject = stream;
             await video.play();
           }
+          // 2) load models once
           if (!handModel) handModel = await handpose.load();
-          if (!faceModel) faceModel = await faceLandmarksDetection.load(
-            faceLandmarksDetection.SupportedPackages.MediaPipeFacemesh
-          );
+          try {
+            const pkg = faceLandmarksDetection.SupportedPackages?.mediapipeFacemesh;
+            faceModel = pkg
+              ? await faceLandmarksDetection.load(pkg)
+              : await faceLandmarksDetection.load();
+          } catch {
+            faceModel = await faceLandmarksDetection.load();
+          }
+          // 3) start loop
           const detect = async () => {
             if (!camOn) return;
-            // Hands
+            // hands
             const hands = await handModel.estimateHands(video, true);
             if (hands.length) {
               const lm = hands[0].landmarks;
@@ -199,48 +236,44 @@
                 lastGesture = g;
                 appendGesture(g);
               }
-            } else lastGesture=null;
-            // Faces
-            const faces = await faceModel.estimateFaces({input:video});
-            const hasF = faces.length>0;
+            } else lastGesture = null;
+            // face
+            const faces = await faceModel.estimateFaces({ input: video });
+            const hasF = faces.length > 0;
             if (hasF && !lastFace) {
-              lastFace=true;
+              lastFace = true;
               appendGesture("face_detected");
-            } else if (!hasF) lastFace=false;
+            } else if (!hasF) lastFace = false;
+
             loopId = requestAnimationFrame(detect);
           };
           detect();
-        } catch(err) {
+
+        } catch (err) {
           console.error("Camera setup failed:", err);
-          alert("Camera error: " + err.message);
-          camOn=false;
-          $(this).text("Start Camera Control");
+          alert("Camera error: " + err.message +
+                "\nMake sure you allowed camera access and are on HTTPS or localhost.");
+          camOn = false;
+          btn.text("Start Camera Control");
           $("#camera-status").text("Camera control is off.");
         }
+
       } else {
-        camOn=false;
-        $(this).text("Start Camera Control");
+        // stop
+        camOn = false;
+        btn.text("Start Camera Control");
         $("#camera-status").text("Camera control is off.");
         cancelAnimationFrame(loopId);
         if (stream) {
-          stream.getTracks().forEach(t=>t.stop());
-          stream=null;
+          stream.getTracks().forEach(t => t.stop());
+          stream = null;
         }
         video.srcObject = null;
-        lastGesture=null; lastFace=false;
+        lastGesture = null; lastFace = false;
       }
     });
 
-    function appendGesture(name) {
-      $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><em>[${name}]</em></div></div>`);
-      $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
-      const fd = new FormData();
-      fd.append("text", `[${name}]`);
-      fd.append("output_type","text");
-      if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
-      $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
-    }
-  });
+  }); // end DOM ready
   </script>
 </body>
 </html>
