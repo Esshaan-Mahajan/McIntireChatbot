@@ -1,5 +1,5 @@
 import os
-# Disable Docker for AutoGen function execution on Heroku
+# Disable Docker for AutoGen on Heroku
 os.environ["AUTOGEN_USE_DOCKER"] = "false"
 
 import uuid
@@ -12,16 +12,16 @@ from langdetect import detect, DetectorFactory
 from autogen import UserProxyAgent, AssistantAgent, register_function
 from mood_storage import log_mood, get_mood_history
 
-# Ensure reproducible language detection
+# Seed langdetect for reproducibility
 DetectorFactory.seed = 0
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "supersecret")
 
-# Initialize OpenAI client
+# OpenAI client
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# ——— Define AutoGen Agents ——————————————————————————————
+# ——— AutoGen Agents ——————————————————————————
 
 user_proxy = UserProxyAgent(
     name="UserProxyAgent",
@@ -35,7 +35,7 @@ mood_tracker = AssistantAgent(
         "You are MoodTrackerAgent. Ask the user for mood ratings or emotions, "
         "use store_mood() to log them, and retrieve_mood_history() to report trends."
     ),
-    code_execution_config={"use_functions": True}
+    code_execution_config={"use_functions": True, "use_docker": False}
 )
 
 suggestion_agent = AssistantAgent(
@@ -56,7 +56,7 @@ companion_agent = AssistantAgent(
     )
 )
 
-# ——— Define and register tool functions ——————————————————————
+# ——— Tool Functions ——————————————————————————
 
 def store_mood(mood: str, user_id: str = "default_user") -> str:
     """Log a mood entry."""
@@ -71,22 +71,23 @@ def retrieve_mood_history(user_id: str = "default_user") -> str:
     lines = [f"{e['timestamp'][:10]}: {e['mood']}" for e in history]
     return "📊 Your mood history:\n" + "\n".join(lines)
 
-# Pass the function itself as first arg, then metadata
+# ——— Register Functions with MoodTrackerAgent ——————————————————
+
 register_function(
     store_mood,
     caller=mood_tracker,
-    executor=store_mood,
+    executor=mood_tracker,
     description="Log the user's mood entry"
 )
 
 register_function(
     retrieve_mood_history,
     caller=mood_tracker,
-    executor=retrieve_mood_history,
+    executor=mood_tracker,
     description="Retrieve the user's mood history"
 )
 
-# ——— Session store for per-user proxy ——————————————————————
+# ——— Session Store ——————————————————————————
 
 user_sessions = {}
 
@@ -96,16 +97,14 @@ def index():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    # Session management for multi-agent continuity
+    # Session management
     sid = session.get("sid")
     if not sid:
         sid = str(uuid.uuid4())
         session["sid"] = sid
-    if sid not in user_sessions:
-        user_sessions[sid] = user_proxy
-    proxy = user_sessions[sid]
+    proxy = user_sessions.setdefault(sid, user_proxy)
 
-    # Gather inputs and flags
+    # Inputs & flags
     text_input    = request.form.get("text", "").strip()
     image_file    = request.files.get("image")
     video_file    = request.files.get("video")
@@ -115,7 +114,7 @@ def chat():
     restrict      = request.form.get("restrict_scope") == "on"
     mh_mode       = request.form.get("mh_mode") == "on"
 
-    # ——— 1) Mental-Health Multi-Agent Mode ———————————————————
+    # 1) Mental-Health Multi-Agent Mode
     if mh_mode and text_input:
         try:
             reply = proxy.send(
@@ -123,17 +122,18 @@ def chat():
                 recipients=[companion_agent, mood_tracker, suggestion_agent]
             )
             bot_text = reply if isinstance(reply, str) else reply.message
+            lang = "en"
             try:
                 lang = detect(bot_text)
             except:
-                lang = "en"
+                pass
             return jsonify({"response": bot_text, "language": lang})
         except Exception as e:
             return jsonify({"error": f"MultiAgent error: {e}"}), 500
 
-    # ——— 2) Otherwise: Multimodal Pipeline ————————————————————
+    # 2) Multimodal Pipeline
 
-    # IMAGE input
+    # IMAGE
     if image_file:
         content = []
         if text_input:
@@ -172,29 +172,29 @@ def chat():
             return jsonify({"response": "Image generated", "image_url": img.data[0].url})
         return jsonify({"response": bot_text})
 
-    # VIDEO input → Whisper
+    # VIDEO → Whisper
     if video_file:
         try:
-            file_tuple = (video_file.filename, video_file.stream, video_file.content_type)
+            ft = (video_file.filename, video_file.stream, video_file.content_type)
             transcription = client.audio.transcriptions.create(
-                model="whisper-1", file=file_tuple, response_format="text"
+                model="whisper-1", file=ft, response_format="text"
             )
             user_input = transcription.strip()
         except Exception as e:
             return jsonify({"error": "Video transcription failed: " + str(e)}), 500
 
-    # AUDIO input → Whisper
+    # AUDIO → Whisper
     elif audio_file:
         try:
-            file_tuple = (audio_file.filename, audio_file.stream, audio_file.content_type)
+            ft = (audio_file.filename, audio_file.stream, audio_file.content_type)
             transcription = client.audio.transcriptions.create(
-                model="whisper-1", file=file_tuple, response_format="text"
+                model="whisper-1", file=ft, response_format="text"
             )
             user_input = transcription.strip()
         except Exception as e:
             return jsonify({"error": "Audio transcription failed: " + str(e)}), 500
 
-    # DOCUMENT input
+    # DOCUMENT
     elif document_file:
         try:
             fn = document_file.filename.lower()
@@ -209,7 +209,7 @@ def chat():
         except Exception as e:
             return jsonify({"error": "Document processing failed: " + str(e)}), 500
 
-    # TEXT input
+    # TEXT
     elif text_input:
         user_input = text_input
     else:
