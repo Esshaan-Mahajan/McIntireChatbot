@@ -3,104 +3,60 @@
 <head>
   <meta charset="UTF-8">
   <title>Multimodal Chatbot</title>
-  <!-- Bootstrap 5 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body {
-      background-color: #f2f2f2;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .chat-container {
-      max-width: 800px;
-      margin: 20px auto;
-    }
+    body { background: #f2f2f2; font-family: sans-serif; }
+    .chat-container { max-width: 800px; margin: 20px auto; }
     #chat-box {
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 20px;
-      height: 500px;
-      overflow-y: auto;
-      margin-bottom: 20px;
+      background: #fff; border: 1px solid #ddd; border-radius: 10px;
+      padding: 20px; height: 500px; overflow-y: auto; margin-bottom:20px;
     }
-    .chat-message {
-      margin-bottom: 15px;
+    .chat-message { margin-bottom: 15px; }
+    .user-message .bubble { background: #0d6efd; color: #fff; }
+    .bot-message .bubble  { background: #e9ecef; color: #333; }
+    .bubble {
+      padding:10px 15px; border-radius:20px; display:inline-block;
+      max-width:70%; word-wrap:break-word;
     }
-    .user-message {
-      text-align: right;
-    }
-    .bot-message {
-      text-align: left;
-    }
-    .message-bubble {
-      display: inline-block;
-      padding: 10px 15px;
-      border-radius: 20px;
-      max-width: 70%;
-      word-wrap: break-word;
-    }
-    .user-message .message-bubble {
-      background-color: #0d6efd;
-      color: #ffffff;
-    }
-    .bot-message .message-bubble {
-      background-color: #e9ecef;
-      color: #333;
-    }
-    .message-image {
-      margin-top: 10px;
-      max-width: 100%;
-      border-radius: 10px;
-    }
-    .audio-player {
-      margin-top: 10px;
-    }
-    .card-form {
-      padding: 20px;
-      border-radius: 10px;
-    }
-    .voice-controls {
-      margin-bottom: 20px;
-      text-align: center;
-    }
+    .message-image { margin-top:10px; max-width:100%; border-radius:10px; }
+    .audio-player  { margin-top:10px; }
+    .voice-controls { text-align:center; margin-bottom:20px; }
   </style>
 </head>
 <body>
-  <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
-    <div class="container">
-      <a class="navbar-brand" href="#">Multimodal Chatbot</a>
-    </div>
+  <nav class="navbar navbar-light bg-light shadow-sm">
+    <div class="container"><span class="navbar-brand">Multimodal Chatbot</span></div>
   </nav>
 
   <div class="container chat-container">
     <div id="chat-box"></div>
-    
-    <!-- Voice Assistant Controls -->
+
+    <!-- Voice Controls -->
     <div class="voice-controls">
       <button id="voice-toggle" class="btn btn-secondary">Start Voice Chat</button>
-      <p id="voice-status" class="mt-2 text-muted">Voice chat is off.</p>
+      <p id="voice-status" class="text-muted mt-2">Voice chat is off.</p>
     </div>
-    
-    <!-- Traditional Chat Form -->
-    <form id="chat-form" enctype="multipart/form-data" class="card card-form shadow-sm">
+
+    <!-- Chat Form -->
+    <form id="chat-form" enctype="multipart/form-data" class="card p-4 shadow-sm">
       <div class="mb-3">
-        <label for="text" class="form-label">Your Message:</label>
-        <textarea id="text" name="text" class="form-control" rows="3" placeholder="Type your message here..."></textarea>
+        <label class="form-label">Your Message:</label>
+        <textarea id="text" name="text" class="form-control" rows="3"></textarea>
       </div>
       <div class="mb-3">
-        <label for="image" class="form-label">Upload an Image:</label>
+        <label class="form-label">Image:</label>
         <input type="file" id="image" name="image" class="form-control" accept="image/*">
       </div>
       <div class="mb-3">
-        <label for="video" class="form-label">Upload a Video:</label>
+        <label class="form-label">Video:</label>
         <input type="file" id="video" name="video" class="form-control" accept="video/*">
       </div>
       <div class="mb-3">
-        <label for="audio" class="form-label">Upload an Audio File:</label>
+        <label class="form-label">Audio:</label>
         <input type="file" id="audio" name="audio" class="form-control" accept="audio/*">
       </div>
       <div class="mb-3">
-        <label for="document" class="form-label">Upload a Document (.txt or .pdf):</label>
+        <label class="form-label">Document (.txt, .pdf):</label>
         <input type="file" id="document" name="document" class="form-control" accept=".txt,.pdf">
       </div>
       <div class="mb-3">
@@ -122,126 +78,103 @@
     </form>
   </div>
 
-  <!-- Bootstrap 5 JS Bundle (includes Popper) -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- jQuery -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script>
-    // Traditional Chat Form Submission
+    // Traditional form
     $("#chat-form").submit(function(e) {
       e.preventDefault();
-      var formData = new FormData(this);
-      var messageText = $("#text").val() || "File(s) submitted";
-      $("#chat-box").append("<div class='chat-message user-message'><div class='message-bubble'><strong>You:</strong> " + messageText + "</div></div>");
-      
+      const fd = new FormData(this);
+      const msg = $("#text").val() || "File(s) submitted";
+      $("#chat-box").append(
+        "<div class='chat-message user-message'><div class='bubble'><strong>You:</strong> " + msg + "</div></div>"
+      );
       $.ajax({
-        type: "POST",
-        url: "/chat",
-        data: formData,
-        contentType: false,
-        processData: false,
-        success: function(data) {
-          var botContent = "";
-          if (data.response) {
-            botContent += "<div class='mb-2'><strong>Bot:</strong> " + data.response + "</div>";
-          }
-          if (data.image_url) {
-            botContent += "<div><img class='message-image' src='" + data.image_url + "' alt='Generated Image'></div>";
-          }
-          if (data.audio_url) {
-            botContent += "<div class='audio-player'><audio controls src='" + data.audio_url + "'></audio></div>";
-          }
-          $("#chat-box").append("<div class='chat-message bot-message'><div class='message-bubble'>" + botContent + "</div></div>");
-          $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
+        type: "POST", url: "/chat",
+        data: fd, contentType: false, processData: false,
+        success(data) {
+          _renderBotResponse(data);
         },
-        error: function(xhr) {
-          let err = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : "Unknown error";
-          $("#chat-box").append("<div class='chat-message bot-message text-danger'><div class='message-bubble'><strong>Error:</strong> " + err + "</div></div>");
+        error(xhr) {
+          const err = xhr.responseJSON?.error || "Unknown error";
+          $("#chat-box").append(
+            "<div class='chat-message bot-message'><div class='bubble text-danger'><strong>Error:</strong> " + err + "</div></div>"
+          );
         }
       });
     });
 
-    // Voice Assistant Functionality
+    // Voice Chat
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.continuous = false;
     recognition.interimResults = false;
-    
-    let voiceChatActive = false;
-    
-    $("#voice-toggle").click(function() {
-      if (!voiceChatActive) {
-        startVoiceChat();
-      } else {
-        stopVoiceChat();
-      }
+    let voiceOn = false;
+
+    $("#voice-toggle").click(() => {
+      if (!voiceOn) { startVoice(); } else { stopVoice(); }
     });
-    
-    function startVoiceChat() {
-      voiceChatActive = true;
-      $("#voice-toggle").text('Stop Voice Chat');
-      $("#voice-status").text('Voice chat is active. Speak now...');
+
+    function startVoice() {
+      voiceOn = true;
+      $("#voice-toggle").text("Stop Voice Chat");
+      $("#voice-status").text("Voice chat is active. Speak now...");
       recognition.start();
     }
-    
-    function stopVoiceChat() {
-      voiceChatActive = false;
-      $("#voice-toggle").text('Start Voice Chat');
-      $("#voice-status").text('Voice chat is off.');
+    function stopVoice() {
+      voiceOn = false;
+      $("#voice-toggle").text("Start Voice Chat");
+      $("#voice-status").text("Voice chat is off.");
       recognition.stop();
     }
-    
-    recognition.onresult = function(event) {
-      let transcript = event.results[0][0].transcript;
-      $("#chat-box").append("<div class='chat-message user-message'><div class='message-bubble'><strong>You (voice):</strong> " + transcript + "</div></div>");
-      
-      // Send recognized text to the backend, forcing speech output.
-      let formData = new FormData();
-      formData.append("text", transcript);
-      formData.append("output_type", "speech");
+
+    recognition.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      $("#chat-box").append(
+        "<div class='chat-message user-message'><div class='bubble'><strong>You (voice):</strong> " + transcript + "</div></div>"
+      );
+      const fd = new FormData();
+      fd.append("text", transcript);
+      fd.append("output_type", "speech");
       $.ajax({
-        type: "POST",
-        url: "/chat",
-        data: formData,
-        contentType: false,
-        processData: false,
-        success: function(data) {
-          var botContent = "";
-          if (data.response) {
-            botContent += "<div class='mb-2'><strong>Bot:</strong> " + data.response + "</div>";
-            speakText(data.response);
-          }
-          if (data.image_url) {
-            botContent += "<div><img class='message-image' src='" + data.image_url + "' alt='Generated Image'></div>";
-          }
-          if (data.audio_url) {
-            botContent += "<div class='audio-player'><audio controls src='" + data.audio_url + "'></audio></div>";
-          }
-          $("#chat-box").append("<div class='chat-message bot-message'><div class='message-bubble'>" + botContent + "</div></div>");
-          $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
-        },
-        error: function(xhr) {
-          let err = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : "Unknown error";
-          $("#chat-box").append("<div class='chat-message bot-message text-danger'><div class='message-bubble'><strong>Error:</strong> " + err + "</div></div>");
+        type: "POST", url: "/chat",
+        data: fd, contentType: false, processData: false,
+        success(data) { _renderBotResponse(data); },
+        error(xhr) {
+          const err = xhr.responseJSON?.error || "Unknown error";
+          $("#chat-box").append(
+            "<div class='chat-message bot-message'><div class='bubble text-danger'><strong>Error:</strong> " + err + "</div></div>"
+          );
         }
       });
-    }
-    
-    function speakText(text) {
-      let utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
-      speechSynthesis.speak(utterance);
-    }
-    
-    recognition.onerror = function(event) {
-      console.error("Speech recognition error", event);
-    }
-    
-    recognition.onend = function() {
-      if (voiceChatActive) {
-        recognition.start();
+    };
+    recognition.onend = () => { if (voiceOn) recognition.start(); };
+
+    // Render bot response (text, image, audio) and speak if needed
+    function _renderBotResponse(data) {
+      let html = "";
+      if (data.response) {
+        html += "<div><strong>Bot:</strong> " + data.response + "</div>";
       }
+      if (data.image_url) {
+        html += "<div><img class='message-image' src='" + data.image_url + "'></div>";
+      }
+      if (data.audio_url) {
+        html += "<div class='audio-player'><audio controls src='" + data.audio_url + "'></audio></div>";
+      }
+      $("#chat-box").append(
+        "<div class='chat-message bot-message'><div class='bubble'>" + html + "</div></div>"
+      );
+      $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
+      // Speak in detected language
+      if (data.response && data.language) {
+        speakText(data.response, data.language);
+      }
+    }
+
+    function speakText(text, lang) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang || 'en-US';
+      speechSynthesis.speak(u);
     }
   </script>
 </body>
