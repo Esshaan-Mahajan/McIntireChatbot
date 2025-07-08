@@ -5,3 +5,4 @@ gTTS==2.2.4
 langdetect==1.0.9
 pyautogen>=0.1.0
 gunicorn==20.1.0
+matplotlib==3.7.1
