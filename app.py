@@ -116,8 +116,9 @@ def chat():
 
         # 1) Mental-Health Multi-Agent Mode
         if mh_mode and text_input:
+            # Pass text_input positionally
             reply = proxy.send(
-                user_message=text_input,
+                text_input,
                 recipients=[companion_agent, mood_tracker, suggestion_agent]
             )
             bot_text = reply if isinstance(reply, str) else reply.message
@@ -141,7 +142,10 @@ def chat():
             b64 = base64.b64encode(img_bytes).decode()
             content.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:{image_file.content_type};base64,{b64}", "detail": "auto"}
+                "image_url": {
+                    "url": f"data:{image_file.content_type};base64,{b64}",
+                    "detail": "auto"
+                }
             })
             resp = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -152,7 +156,9 @@ def chat():
 
             if output_type == "speech":
                 fn = f"static/audio_{uuid.uuid4().hex}.mp3"
-                tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
+                tts = client.audio.speech.create(
+                    model="tts-1", voice="alloy", input=bot_text
+                )
                 tts.stream_to_file(fn)
                 return jsonify({"response": bot_text, "audio_url": fn})
             if output_type == "image":
@@ -163,7 +169,10 @@ def chat():
                     quality="standard",
                     n=1
                 )
-                return jsonify({"response": "Image generated", "image_url": img.data[0].url})
+                return jsonify({
+                    "response": "Image generated",
+                    "image_url": img.data[0].url
+                })
             return jsonify({"response": bot_text})
 
         # VIDEO → Whisper
@@ -204,8 +213,12 @@ def chat():
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content":
-                    "You are a helpful assistant fluent in many languages. Detect and reply in the user's language."
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant fluent in many languages. "
+                        "Detect and reply in the user's language."
+                    )
                 },
                 {"role": "user", "content": user_input}
             ],
@@ -215,7 +228,9 @@ def chat():
 
         if output_type == "speech":
             fn = f"static/audio_{uuid.uuid4().hex}.mp3"
-            tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
+            tts = client.audio.speech.create(
+                model="tts-1", voice="alloy", input=bot_text
+            )
             tts.stream_to_file(fn)
             return jsonify({"response": bot_text, "audio_url": fn})
         if output_type == "image":
@@ -226,7 +241,10 @@ def chat():
                 quality="standard",
                 n=1
             )
-            return jsonify({"response": "Image generated", "image_url": img.data[0].url})
+            return jsonify({
+                "response": "Image generated",
+                "image_url": img.data[0].url
+            })
 
         return jsonify({"response": bot_text})
 
