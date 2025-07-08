@@ -134,7 +134,13 @@ def chat():
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a helpful chatbot."},
+                    {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant fluent in many languages. "
+                        "Detect the language of the user’s message and reply in that same language."
+                    )
+                },
                     {"role": "user", "content": user_input}
                 ],
                 max_tokens=150
