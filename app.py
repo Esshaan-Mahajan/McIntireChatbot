@@ -9,6 +9,9 @@ from langdetect import detect, DetectorFactory
 from autogen import UserProxyAgent, AssistantAgent, register_function
 from mood_storage import log_mood, get_mood_history
 
+os.environ["AUTOGEN_USE_DOCKER"] = "false"
+
+
 DetectorFactory.seed = 0
 
 app = Flask(__name__)
