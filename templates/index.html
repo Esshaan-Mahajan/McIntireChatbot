@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <title>Multimodal Chatbot + On-Demand Gestures</title>
-  <!-- Bootstrap 5 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #f2f2f2; font-family: sans-serif; }
@@ -95,7 +94,7 @@
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.7.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.min.js"></script>
-  <script src="https://unpkg.com/@tensorflow-models/face-landmarks-detection@1.0.6/dist/face-landmarks-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/facemesh@0.0.4/dist/facemesh.min.js"></script>
 
   <script>
   $(function() {
@@ -196,11 +195,12 @@
         handModel = null,
         faceModel = null,
         loopId = null;
-    let lastGesture = null, lastFace = false;
+    let lastGesture = null,
+        lastFace    = false;
 
     $("#camera-toggle").click(async function() {
-      const btn = $(this);
-      const video = document.getElementById("camera");
+      const btn   = $(this),
+            video = document.getElementById("camera");
 
       if (!camOn) {
         camOn = true;
@@ -214,36 +214,35 @@
             video.srcObject = stream;
             await video.play();
           }
-          // 2) load models once
+          // 2) load models
           if (!handModel) handModel = await handpose.load();
-          try {
-            const pkg = faceLandmarksDetection.SupportedPackages?.mediapipeFacemesh;
-            faceModel = pkg
-              ? await faceLandmarksDetection.load(pkg)
-              : await faceLandmarksDetection.load();
-          } catch {
-            faceModel = await faceLandmarksDetection.load();
-          }
-          // 3) start loop
+          if (!faceModel) faceModel = await facemesh.load();
+          // 3) detection loop
           const detect = async () => {
             if (!camOn) return;
-            // hands
+
+            // handpose
             const hands = await handModel.estimateHands(video, true);
             if (hands.length) {
               const lm = hands[0].landmarks;
-              const g = lm[4][1] < lm[2][1] ? "thumbs_up" : "thumbs_down";
+              const g  = lm[4][1] < lm[2][1] ? "thumbs_up" : "thumbs_down";
               if (g !== lastGesture) {
                 lastGesture = g;
                 appendGesture(g);
               }
-            } else lastGesture = null;
-            // face
-            const faces = await faceModel.estimateFaces({ input: video });
+            } else {
+              lastGesture = null;
+            }
+
+            // facemesh
+            const faces = await faceModel.estimateFaces(video);
             const hasF = faces.length > 0;
             if (hasF && !lastFace) {
               lastFace = true;
               appendGesture("face_detected");
-            } else if (!hasF) lastFace = false;
+            } else if (!hasF) {
+              lastFace = false;
+            }
 
             loopId = requestAnimationFrame(detect);
           };
@@ -259,7 +258,7 @@
         }
 
       } else {
-        // stop
+        // stop everything
         camOn = false;
         btn.text("Start Camera Control");
         $("#camera-status").text("Camera control is off.");
@@ -269,7 +268,8 @@
           stream = null;
         }
         video.srcObject = null;
-        lastGesture = null; lastFace = false;
+        lastGesture = null;
+        lastFace    = false;
       }
     });
 
