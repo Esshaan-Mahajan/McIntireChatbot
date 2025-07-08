@@ -116,10 +116,10 @@ def chat():
 
         # 1) Mental-Health Multi-Agent Mode
         if mh_mode and text_input:
-            # Pass text_input positionally
+            # Use the correct 'recipient' argument
             reply = proxy.send(
                 text_input,
-                recipients=[companion_agent, mood_tracker, suggestion_agent]
+                recipient=[companion_agent, mood_tracker, suggestion_agent]
             )
             bot_text = reply if isinstance(reply, str) else reply.message
             lang = "en"
