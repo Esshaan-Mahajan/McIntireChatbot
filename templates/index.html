@@ -3,20 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <title>Multimodal Chatbot + On-Demand Gestures</title>
+  <!-- Bootstrap 5 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #f2f2f2; font-family: sans-serif; }
     .chat-container { max-width:800px; margin:20px auto; }
-    #chat-box { 
-      background:#fff; border:1px solid #ddd; border-radius:10px;
-      height:350px; overflow-y:auto; padding:20px; margin-bottom:15px; 
+    #chat-box {
+      background:#fff;
+      border:1px solid #ddd;
+      border-radius:10px;
+      height:350px;
+      overflow-y:auto;
+      padding:20px;
+      margin-bottom:15px;
     }
     .chat-message { margin-bottom:15px; }
     .user-message { text-align:right; }
     .bot-message  { text-align:left;  }
     .bubble {
-      display:inline-block; padding:10px 15px; border-radius:20px;
-      max-width:70%; word-wrap:break-word;
+      display:inline-block;
+      padding:10px 15px;
+      border-radius:20px;
+      max-width:70%;
+      word-wrap:break-word;
     }
     .user-message .bubble { background:#0d6efd; color:#fff }
     .bot-message  .bubble { background:#e9ecef; color:#333 }
@@ -24,7 +33,10 @@
     .audio-player  { margin-top:10px; }
     .voice-controls { text-align:center; margin-bottom:15px; }
     video#camera {
-      display:block; margin:0 auto 10px; border:1px solid #ccc; border-radius:10px;
+      display:block;
+      margin:0 auto 10px;
+      border:1px solid #ccc;
+      border-radius:10px;
     }
   </style>
 </head>
@@ -36,23 +48,23 @@
   </nav>
 
   <div class="container chat-container">
-    <!-- Camera + Toggle -->
+    <!-- Camera Preview & Toggle -->
     <video id="camera" width="320" height="240" autoplay muted playsinline></video>
     <div class="text-center mb-3">
       <button id="camera-toggle" class="btn btn-info">Start Camera Control</button>
       <p id="camera-status" class="text-muted">Camera control is off.</p>
     </div>
 
-    <!-- Chat history -->
+    <!-- Chat History -->
     <div id="chat-box"></div>
 
-    <!-- Voice toggle -->
+    <!-- Voice Chat Controls -->
     <div class="voice-controls">
       <button id="voice-toggle" class="btn btn-secondary">Start Voice Chat</button>
       <p id="voice-status" class="text-muted mt-2">Voice chat is off.</p>
     </div>
 
-    <!-- Chat form -->
+    <!-- Chat Form -->
     <form id="chat-form" enctype="multipart/form-data" class="card p-4 shadow-sm">
       <div class="mb-3">
         <label class="form-label">Your Message:</label>
@@ -68,7 +80,7 @@
       </div>
       <div class="mb-3">
         <label class="form-label">Audio:</label>
-        <input type="file" id="audio" name="audio" class="form-control" accept="audio/*">
+        <input type="file" id="	audio"` name="audio" class="form-control" accept="audio/*">
       </div>
       <div class="mb-3">
         <label class="form-label">Document (.txt, .pdf):</label>
@@ -76,7 +88,9 @@
       </div>
       <div class="form-check form-switch mb-3">
         <input class="form-check-input" type="checkbox" id="restrict_scope" name="restrict_scope">
-        <label class="form-check-label" for="restrict_scope">Restrict answers to the uploaded document only</label>
+        <label class="form-check-label" for="restrict_scope">
+          Restrict answers to the uploaded document only
+        </label>
       </div>
       <div class="mb-3">
         <label class="form-label">Output Type:</label><br>
@@ -96,7 +110,7 @@
 
   <script>
   $(function() {
-    // --- Chat + TTS rendering ---
+    // Render bot replies
     function renderBot(data) {
       let html = "";
       if (data.response) html += `<div><strong>Bot:</strong> ${data.response}</div>`;
@@ -111,60 +125,69 @@
       }
     }
 
+    // Chat form submission
     $("#chat-form").submit(function(e) {
       e.preventDefault();
       const fd = new FormData(this);
       if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
       const msg = $("#text").val() || "File(s) submitted";
       $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><strong>You:</strong> ${msg}</div></div>`);
-      $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
+      $.ajax({
+        type: "POST", url: "/chat", data: fd,
+        contentType: false, processData: false,
+        success: renderBot
+      });
     });
 
-    // --- Voice Chat toggle ---
+    // Voice chat toggle
     const Rec = window.SpeechRecognition||window.webkitSpeechRecognition;
     if (Rec) {
       const rec = new Rec();
       rec.lang='en-US'; rec.interimResults=false;
       let vOn=false;
-      $("#voice-toggle").click(()=>{
-        vOn ? (rec.stop(),vOn=false,$("#voice-toggle").text("Start Voice Chat")) :
-              (rec.start(), vOn=true,$("#voice-toggle").text("Stop Voice Chat"));
+      $("#voice-toggle").click(() => {
+        if (!vOn) {
+          rec.start(); vOn=true;
+          $("#voice-toggle").text("Stop Voice Chat");
+          $("#voice-status").text("Voice chat is active. Speak now...");
+        } else {
+          rec.stop(); vOn=false;
+          $("#voice-toggle").text("Start Voice Chat");
+          $("#voice-status").text("Voice chat is off.");
+        }
       });
-      rec.onresult=e=>{
-        const t=e.results[0][0].transcript;
+      rec.onresult = e => {
+        const t = e.results[0][0].transcript;
         $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><strong>You (voice):</strong> ${t}</div></div>`);
-        const fd=new FormData(); fd.append("text",t); fd.append("output_type","speech");
+        const fd = new FormData();
+        fd.append("text", t);
+        fd.append("output_type", "speech");
         if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
         $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
       };
-      rec.onend=()=>{ if(vOn) rec.start(); };
+      rec.onend = () => { if (vOn) rec.start(); };
     }
 
-    // --- On-demand Camera & Gesture Detection ---
+    // On-demand camera & detection
     let camOn=false, stream=null, handModel=null, faceModel=null, loopId=null;
     let lastGesture=null, lastFace=false;
 
-    $("#camera-toggle").click(async function() {
+    $("#camera-toggle").click(async function(){
+      const video = document.getElementById("camera");
       if (!camOn) {
-        // Start camera
-        camOn = true;
+        camOn=true;
         $(this).text("Stop Camera Control");
         $("#camera-status").text("Camera control is active.");
-
         try {
-          // Load models once
+          if (!stream) {
+            stream = await navigator.mediaDevices.getUserMedia({video:true});
+            video.srcObject = stream;
+            await video.play();
+          }
           if (!handModel) handModel = await handpose.load();
           if (!faceModel) faceModel = await faceLandmarksDetection.load(
             faceLandmarksDetection.SupportedPackages.MediaPipeFacemesh
           );
-
-          // Start video stream
-          const video = document.getElementById("camera");
-          stream = await navigator.mediaDevices.getUserMedia({video:true});
-          video.srcObject = stream;
-          await new Promise(r => video.onloadedmetadata = r);
-
-          // Detection loop
           const detect = async () => {
             if (!camOn) return;
             // Hands
@@ -176,37 +199,35 @@
                 lastGesture = g;
                 appendGesture(g);
               }
-            } else {
-              lastGesture = null;
-            }
-            // Face
+            } else lastGesture=null;
+            // Faces
             const faces = await faceModel.estimateFaces({input:video});
             const hasF = faces.length>0;
             if (hasF && !lastFace) {
-              lastFace = true;
+              lastFace=true;
               appendGesture("face_detected");
-            } else if (!hasF) {
-              lastFace = false;
-            }
-
+            } else if (!hasF) lastFace=false;
             loopId = requestAnimationFrame(detect);
           };
           detect();
-
         } catch(err) {
           console.error("Camera setup failed:", err);
+          alert("Camera error: " + err.message);
+          camOn=false;
+          $(this).text("Start Camera Control");
+          $("#camera-status").text("Camera control is off.");
         }
-
       } else {
-        // Stop camera
-        camOn = false;
+        camOn=false;
         $(this).text("Start Camera Control");
         $("#camera-status").text("Camera control is off.");
         cancelAnimationFrame(loopId);
-        if (stream) stream.getTracks().forEach(t=>t.stop());
-        document.getElementById("camera").srcObject = null;
-        lastGesture = null;
-        lastFace = false;
+        if (stream) {
+          stream.getTracks().forEach(t=>t.stop());
+          stream=null;
+        }
+        video.srcObject = null;
+        lastGesture=null; lastFace=false;
       }
     });
 
@@ -215,12 +236,11 @@
       $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
       const fd = new FormData();
       fd.append("text", `[${name}]`);
-      fd.append("output_type", "text");
+      fd.append("output_type","text");
       if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
       $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
     }
-
-  }); // end DOM ready
+  });
   </script>
 </body>
 </html>
