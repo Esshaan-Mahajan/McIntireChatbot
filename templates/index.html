@@ -2,152 +2,171 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Multimodal Chatbot with TF.js Gestures & Face</title>
-  <!-- Bootstrap 5 CSS -->
+  <title>Multimodal Chatbot + TF.js Gestures</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
   <style>
-    body { background: #f2f2f2; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; }
-    .chat-container { max-width: 800px; margin: 20px auto; }
-    #chat-box {
-      background: #fff; border: 1px solid #ddd; border-radius: 10px;
-      padding: 20px; height: 400px; overflow-y: auto; margin-bottom: 20px;
-    }
-    .chat-message { margin-bottom: 15px; }
-    .user-message { text-align: right; }
-    .bot-message  { text-align: left; }
-    .bubble {
-      display: inline-block; padding: 10px 15px; border-radius: 20px;
-      max-width: 70%; word-wrap: break-word;
-    }
-    .user-message .bubble { background: #0d6efd; color: #fff; }
-    .bot-message  .bubble { background: #e9ecef; color: #333; }
-    video#camera { border:1px solid #ccc; border-radius: 10px; }
+    body { background: #f2f2f2; font-family: sans-serif; }
+    .chat-container { max-width:800px; margin:20px auto; }
+    #chat-box { background:#fff; border:1px solid #ddd; border-radius:10px;
+      height:350px; overflow-y:auto; padding:20px; margin-bottom:15px; }
+    .chat-message { margin-bottom:15px; }
+    .user-message { text-align:right; }
+    .bot-message  { text-align:left;  }
+    .bubble { display:inline-block; padding:10px 15px; border-radius:20px;
+      max-width:70%; word-wrap:break-word; }
+    .user-message .bubble { background:#0d6efd; color:#fff }
+    .bot-message  .bubble { background:#e9ecef; color:#333 }
+    video#camera { border:1px solid #ccc; border-radius:10px; display:block; margin:0 auto 15px; }
+    .voice-controls { text-align:center; margin-bottom:15px; }
   </style>
 </head>
 <body>
-
   <nav class="navbar navbar-light bg-light shadow-sm">
-    <div class="container">
-      <span class="navbar-brand">Multimodal Chatbot + TF.js Gestures</span>
-    </div>
+    <div class="container"><span class="navbar-brand">Multimodal Chatbot + TF.js</span></div>
   </nav>
 
   <div class="container chat-container">
-    <!-- Live camera feed for gesture & face detection -->
-    <div class="mb-3 text-center">
-      <video id="camera" width="320" height="240" autoplay muted playsinline></video>
-    </div>
+    <!-- camera preview -->
+    <video id="camera" width="320" height="240" autoplay muted playsinline></video>
 
+    <!-- chat history -->
     <div id="chat-box"></div>
 
-    <!-- Chat Form -->
-    <form id="chat-form" class="card p-4 shadow-sm mb-3" enctype="multipart/form-data">
+    <!-- voice toggle -->
+    <div class="voice-controls">
+      <button id="voice-toggle" class="btn btn-secondary">Start Voice Chat</button>
+      <p id="voice-status" class="text-muted mt-2">Voice chat is off.</p>
+    </div>
+
+    <!-- chat form -->
+    <form id="chat-form" enctype="multipart/form-data" class="card p-4 shadow-sm">
       <div class="mb-3">
-        <label class="form-label">Message:</label>
+        <label>Your Message:</label>
         <textarea id="text" name="text" class="form-control" rows="2"></textarea>
       </div>
-      <!-- other inputs omitted for brevity… -->
-      <button class="btn btn-primary">Send</button>
+      <!-- your file inputs… -->
+      <div class="form-check form-switch mb-3">
+        <input type="checkbox" class="form-check-input" id="restrict_scope" name="restrict_scope">
+        <label class="form-check-label" for="restrict_scope">
+          Restrict answers to the uploaded document only
+        </label>
+      </div>
+      <div class="mb-3">
+        <label>Output Type:</label><br>
+        <label class="me-3"><input type="radio" name="output_type" value="text" checked> Text</label>
+        <label class="me-3"><input type="radio" name="output_type" value="image"> Image</label>
+        <label><input type="radio" name="output_type" value="speech"> Speech</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Send</button>
     </form>
   </div>
 
-  <!-- jQuery -->
+  <!-- dependencies -->
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <!-- TensorFlow.js Core -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.7.0/dist/tf.min.js"></script>
-  <!-- Handpose Model -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.min.js"></script>
-  <!-- Face Landmarks Detection Model -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.1.5/dist/face-landmarks-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.6/dist/face-landmarks-detection.min.js"></script>
+>
 
   <script>
-  // Utility: append a gesture/face event as a user message and send to backend
-  let lastGesture = null, lastFace = false;
-  function appendUserGesture(gesture) {
-    $("#chat-box").append(
-      `<div class='chat-message user-message'><div class='bubble'><em>[${gesture}]</em></div></div>`
-    );
-    // scroll
-    $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
-    // send to /chat as text
-    const fd = new FormData();
-    fd.append("text", `[${gesture}]`);
-    fd.append("output_type", "text");
-    $.ajax({
-      type: "POST",
-      url: "/chat",
-      data: fd,
-      contentType: false,
-      processData: false,
-      success(data) {
-        renderBot(data);
+  // everything runs after DOM is ready
+  $(async function() {
+    // 1) Bind your chat form
+    function renderBot(data) {
+      let html = "";
+      if (data.response) html += `<div><strong>Bot:</strong> ${data.response}</div>`;
+      if (data.image_url) html += `<div><img class="message-image" src="${data.image_url}"></div>`;
+      if (data.audio_url) html += `<div class="audio-player"><audio controls src="${data.audio_url}"></audio></div>`;
+      $("#chat-box").append(`<div class="chat-message bot-message"><div class="bubble">${html}</div></div>`);
+      $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
+      if (data.response && data.language) {
+        const u = new SpeechSynthesisUtterance(data.response);
+        u.lang = data.language;
+        speechSynthesis.speak(u);
       }
-    });
-  }
-
-  function renderBot(data) {
-    let html = "";
-    if (data.response) html += `<div><strong>Bot:</strong> ${data.response}</div>`;
-    $("#chat-box").append(
-      `<div class='chat-message bot-message'><div class='bubble'>${html}</div></div>`
-    );
-    $("#chat-box").scrollTop($("#chat-box")[0].scrollHeight);
-  }
-
-  // Setup camera
-  async function setupCamera() {
-    const video = document.getElementById("camera");
-    const stream = await navigator.mediaDevices.getUserMedia({video:true});
-    video.srcObject = stream;
-    return new Promise((resolve) => {
-      video.onloadedmetadata = () => resolve(video);
-    });
-  }
-
-  // Load models & start detection loop
-  async function main() {
-    const video = await setupCamera();
-
-    // Load Handpose
-    const handModel = await handpose.load();
-    // Load FaceMesh (MediaPipe FaceMesh package)
-    const faceModel = await faceLandmarksDetection.load(
-      faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
-    );
-
-    async function detect() {
-      // Hand detection
-      const hands = await handModel.estimateHands(video, true);
-      if (hands.length > 0) {
-        const lm = hands[0].landmarks;
-        // y coordinate: tip of thumb = lm[4][1], MCP = lm[2][1]
-        const gesture = (lm[4][1] < lm[2][1]) ? "thumbs_up" : "thumbs_down";
-        if (gesture !== lastGesture) {
-          lastGesture = gesture;
-          appendUserGesture(gesture);
-        }
-      } else {
-        lastGesture = null;
-      }
-
-      // Face detection
-      const faces = await faceModel.estimateFaces({input: video});
-      const hasFace = faces.length > 0;
-      if (hasFace && !lastFace) {
-        lastFace = true;
-        appendUserGesture("face_detected");
-      } else if (!hasFace) {
-        lastFace = false;
-      }
-
-      requestAnimationFrame(detect);
     }
 
-    detect();
-  }
+    $("#chat-form").submit(function(e) {
+      e.preventDefault();
+      const fd = new FormData(this);
+      if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
+      const msg = $("#text").val() || "File(s) submitted";
+      $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><strong>You:</strong> ${msg}</div></div>`);
+      $.ajax({
+        type:"POST", url:"/chat", data:fd,
+        contentType:false, processData:false,
+        success: renderBot,
+        error(xhr) {
+          const err = xhr.responseJSON?.error || "Unknown error";
+          $("#chat-box").append(`<div class="chat-message bot-message"><div class="bubble text-danger"><strong>Error:</strong> ${err}</div></div>`);
+        }
+      });
+    });
 
-  main();
+    // 2) Voice toggle
+    const Recognition = window.SpeechRecognition||window.webkitSpeechRecognition;
+    if (Recognition) {
+      const rec = new Recognition();
+      rec.lang = 'en-US'; rec.interimResults = false;
+      let voiceOn = false;
+      $("#voice-toggle").click(()=>{
+        voiceOn ? (rec.stop(), voiceOn=false, $("#voice-toggle").text("Start Voice Chat"), $("#voice-status").text("Voice chat is off."))
+                : (rec.start(),  voiceOn=true,  $("#voice-toggle").text("Stop Voice Chat"),  $("#voice-status").text("Voice chat is active. Speak now..."));
+      });
+      rec.onresult = e => {
+        const t = e.results[0][0].transcript;
+        $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><strong>You (voice):</strong> ${t}</div></div>`);
+        const fd = new FormData(); fd.append("text",t); fd.append("output_type","speech");
+        if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
+        $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
+      };
+      rec.onend = ()=>{ if (voiceOn) rec.start(); };
+    }
+
+    // 3) Try to hook up camera + TF.js
+    try {
+      const video = document.getElementById("camera");
+      const stream = await navigator.mediaDevices.getUserMedia({video:true});
+      video.srcObject = stream;
+      await new Promise(r=>video.onloadedmetadata=r);
+
+      const handModel = await handpose.load();
+      const faceModel = await faceLandmarksDetection.load(faceLandmarksDetection.SupportedPackages.mediapipeFacemesh);
+
+      let lastGesture=null, lastFace=false;
+      async function detect() {
+        const hands = await handModel.estimateHands(video, true);
+        if (hands.length) {
+          const lm = hands[0].landmarks;
+          const g = lm[4][1]<lm[2][1] ? "thumbs_up" : "thumbs_down";
+          if (g!==lastGesture) {
+            lastGesture=g;
+            $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><em>[${g}]</em></div></div>`);
+            const fd=new FormData(); fd.append("text",`[${g}]`); fd.append("output_type","text");
+            if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
+            $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
+          }
+        } else lastGesture=null;
+
+        const faces = await faceModel.estimateFaces({input:video});
+        const hasFace = faces.length>0;
+        if (hasFace && !lastFace) {
+          lastFace=true;
+          $("#chat-box").append(`<div class="chat-message user-message"><div class="bubble"><em>[face_detected]</em></div></div>`);
+          const fd=new FormData(); fd.append("text","[face_detected]"); fd.append("output_type","text");
+          if ($("#restrict_scope").is(":checked")) fd.append("restrict_scope","on");
+          $.ajax({type:"POST",url:"/chat",data:fd,contentType:false,processData:false,success:renderBot});
+        } else if (!hasFace) lastFace=false;
+
+        requestAnimationFrame(detect);
+      }
+      detect();
+
+    } catch(err) {
+      console.error("Camera / TF.js setup failed:", err);
+      // we still keep chat form alive even if camera fails
+    }
+  });
   </script>
 </body>
 </html>
