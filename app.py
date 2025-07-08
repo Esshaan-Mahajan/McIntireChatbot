@@ -5,7 +5,6 @@ os.environ["AUTOGEN_USE_DOCKER"] = "false"
 import uuid
 import base64
 import traceback
-from io import BytesIO
 from flask import Flask, render_template, request, jsonify, session
 from openai import OpenAI
 import PyPDF2
@@ -116,10 +115,10 @@ def chat():
 
         # 1) Mental-Health Multi-Agent Mode
         if mh_mode and text_input:
-            # Use the correct 'recipient' argument
+            # Pass agents as a tuple to avoid unhashable-list errors
             reply = proxy.send(
                 text_input,
-                recipient=[companion_agent, mood_tracker, suggestion_agent]
+                recipient=(companion_agent, mood_tracker, suggestion_agent)
             )
             bot_text = reply if isinstance(reply, str) else reply.message
             lang = "en"
