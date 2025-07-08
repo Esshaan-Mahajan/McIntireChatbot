@@ -1,7 +1,4 @@
 import os
-# Disable Docker for AutoGen on Heroku
-os.environ["AUTOGEN_USE_DOCKER"] = "false"
-
 import uuid
 import base64
 import traceback
@@ -9,7 +6,8 @@ from flask import Flask, render_template, request, jsonify, session
 from openai import OpenAI
 import PyPDF2
 from langdetect import detect, DetectorFactory
-from autogen import UserProxyAgent, AssistantAgent, register_function
+
+# For mood logging
 from mood_storage import log_mood, get_mood_history
 
 # Seed langdetect for reproducibility
@@ -21,73 +19,28 @@ app.secret_key = os.environ.get("SECRET_KEY", "supersecret")
 # Initialize OpenAI client
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# ——— Define AutoGen Agents ——————————————————————————————
+# ——— Helper functions ——————————————————————————————
 
-user_proxy = UserProxyAgent(
-    name="UserProxyAgent",
-    human_input_mode="ALWAYS"
-)
-
-mood_tracker = AssistantAgent(
-    name="MoodTrackerAgent",
-    llm_config={"model": "gpt-4", "temperature": 0.3},
-    system_message=(
-        "You are MoodTrackerAgent. Ask the user for mood ratings or emotions, "
-        "use store_mood() to log them, and retrieve_mood_history() to report trends."
-    ),
-    code_execution_config={"use_functions": True, "use_docker": False}
-)
-
-suggestion_agent = AssistantAgent(
-    name="SuggestionAgent",
-    llm_config={"model": "gpt-4", "temperature": 0.7},
-    system_message=(
-        "You are SuggestionAgent, a wellness coach. Suggest activities "
-        "based on the user's recent mood entries."
-    )
-)
-
-companion_agent = AssistantAgent(
-    name="CompanionAgent",
-    llm_config={"model": "gpt-4", "temperature": 0.8},
-    system_message=(
-        "You are CompanionAgent, a caring and empathetic friend. "
-        "Engage warmly and respond like a supportive companion."
-    )
-)
-
-# ——— Tool Functions ——————————————————————————————
-
-def store_mood(mood: str, user_id: str = "default_user") -> str:
-    log_mood(user_id, mood)
-    return f"✅ Logged mood: {mood}"
+def store_mood(text: str, user_id: str = "default_user") -> str:
+    """
+    Log the user's mood entry (expects something like '4 out of 10').
+    Returns a confirmation message.
+    """
+    # You might parse out the numeric rating if you wish; here we store the raw text.
+    log_mood(user_id, text)
+    return f"✅ Logged mood entry: “{text}”"
 
 def retrieve_mood_history(user_id: str = "default_user") -> str:
+    """
+    Fetches and formats the user's past mood entries.
+    """
     history = get_mood_history(user_id)
     if not history:
         return "No mood history found."
     lines = [f"{e['timestamp'][:10]}: {e['mood']}" for e in history]
     return "📊 Your mood history:\n" + "\n".join(lines)
 
-# ——— Register Functions with MoodTrackerAgent ——————————————————
-
-register_function(
-    store_mood,
-    caller=mood_tracker,
-    executor=mood_tracker,
-    description="Log the user's mood entry"
-)
-
-register_function(
-    retrieve_mood_history,
-    caller=mood_tracker,
-    executor=mood_tracker,
-    description="Retrieve the user's mood history"
-)
-
-# ——— Session Store ——————————————————————————
-
-user_sessions = {}
+# ——— Routes ——————————————————————————————
 
 @app.route("/")
 def index():
@@ -96,43 +49,66 @@ def index():
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
-        # Manage per-user proxy state
+        # --- Session management ---
         sid = session.get("sid")
         if not sid:
             sid = str(uuid.uuid4())
             session["sid"] = sid
-        proxy = user_sessions.setdefault(sid, user_proxy)
 
-        # Gather inputs & flags
+        # --- Gather inputs & flags ---
         text_input    = request.form.get("text", "").strip()
         image_file    = request.files.get("image")
         video_file    = request.files.get("video")
         audio_file    = request.files.get("audio")
         document_file = request.files.get("document")
-        output_type   = request.form.get("output_type", "text")
-        mh_mode       = request.form.get("mh_mode") == "on"
+        output_type   = request.form.get("output_type", "text")   # "text", "image", or "speech"
+        mh_mode       = request.form.get("mh_mode") == "on"       # Mental-health toggle
 
-        # 1) Mental-Health Multi-Agent Mode
+        # ——— 1) Mental-Health “Multi-Agent” Mode ——————————
         if mh_mode and text_input:
-            comp = proxy.send(text_input, recipient=companion_agent)
-            mood = proxy.send(text_input, recipient=mood_tracker)
-            sugg = proxy.send(text_input, recipient=suggestion_agent)
+            # 1) MoodTracker logs and confirms
+            mood_reply = store_mood(text_input)
 
-            def extract(r):
-                if r is None:
-                    return "(no reply)"
-                if isinstance(r, str):
-                    return r
-                return getattr(r, "message", str(r))
+            # 2) SuggestionAgent via direct ChatCompletion
+            suggestion_resp = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a wellness coach. Based on the user's mood input, "
+                            "suggest two concrete coping strategies they can try right now."
+                        )
+                    },
+                    {"role": "user", "content": text_input}
+                ],
+                max_tokens=150
+            ).choices[0].message.content.strip()
 
-            replies = {
-                "Companion": extract(comp),
-                "MoodTracker": extract(mood),
-                "Suggestion": extract(sugg)
-            }
+            # 3) CompanionAgent via direct ChatCompletion
+            companion_resp = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a caring friend. Acknowledge the user's feelings "
+                            "and offer empathy in a warm, human-like tone."
+                        )
+                    },
+                    {"role": "user", "content": text_input}
+                ],
+                max_tokens=150
+            ).choices[0].message.content.strip()
 
-            bot_text = "\n\n".join(f"**{role}:** {txt}" for role, txt in replies.items())
+            # Stitch the three replies together
+            bot_text = (
+                f"**MoodTracker:** {mood_reply}\n\n"
+                f"**Suggestion:** {suggestion_resp}\n\n"
+                f"**Companion:** {companion_resp}"
+            )
 
+            # Optionally detect the language
             lang = "en"
             try:
                 lang = detect(bot_text)
@@ -141,9 +117,9 @@ def chat():
 
             return jsonify({"response": bot_text, "language": lang})
 
-        # 2) Multimodal Pipeline
+        # ——— 2) Multimodal Pipeline ————————————————
 
-        # IMAGE input
+        # IMAGE ➔ Vision-capable model
         if image_file:
             content = []
             if text_input:
@@ -151,13 +127,10 @@ def chat():
             else:
                 content.append({"type": "text", "text": "What's in this image?"})
             img_bytes = image_file.read()
-            b64 = base64.b64encode(img_bytes).decode()
+            b64 = base64.b64encode(img_bytes).decode("utf-8")
             content.append({
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:{image_file.content_type};base64,{b64}",
-                    "detail": "auto"
-                }
+                "image_url": {"url": f"data:{image_file.content_type};base64,{b64}", "detail": "auto"}
             })
             resp = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -166,13 +139,14 @@ def chat():
             )
             bot_text = resp.choices[0].message.content.strip()
 
+            # Speech output
             if output_type == "speech":
                 fn = f"static/audio_{uuid.uuid4().hex}.mp3"
-                tts = client.audio.speech.create(
-                    model="tts-1", voice="alloy", input=bot_text
-                )
+                tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
                 tts.stream_to_file(fn)
                 return jsonify({"response": bot_text, "audio_url": fn})
+
+            # Image generation
             if output_type == "image":
                 img = client.images.generate(
                     model="dall-e-3",
@@ -181,13 +155,11 @@ def chat():
                     quality="standard",
                     n=1
                 )
-                return jsonify({
-                    "response": "Image generated",
-                    "image_url": img.data[0].url
-                })
+                return jsonify({"response": "Image generated", "image_url": img.data[0].url})
+
             return jsonify({"response": bot_text})
 
-        # VIDEO → Whisper
+        # VIDEO ➔ Whisper transcription
         if video_file:
             ft = (video_file.filename, video_file.stream, video_file.content_type)
             transcription = client.audio.transcriptions.create(
@@ -195,7 +167,7 @@ def chat():
             )
             user_input = transcription.strip()
 
-        # AUDIO → Whisper
+        # AUDIO ➔ Whisper transcription
         elif audio_file:
             ft = (audio_file.filename, audio_file.stream, audio_file.content_type)
             transcription = client.audio.transcriptions.create(
@@ -203,48 +175,49 @@ def chat():
             )
             user_input = transcription.strip()
 
-        # DOCUMENT
+        # DOCUMENT (.txt or .pdf)
         elif document_file:
             fn = document_file.filename.lower()
             if fn.endswith(".txt"):
                 user_input = document_file.read().decode("utf-8").strip()
             elif fn.endswith(".pdf"):
                 reader = PyPDF2.PdfReader(document_file)
-                text = "".join(p.extract_text() + "\n" for p in reader.pages)
+                text = "".join(page.extract_text() + "\n" for page in reader.pages)
                 user_input = text.strip()
             else:
                 return jsonify({"error": "Unsupported document format."}), 400
 
-        # TEXT
+        # PLAIN TEXT
         elif text_input:
             user_input = text_input
+
         else:
             return jsonify({"error": "No input provided"}), 400
 
-        # Fallback ChatCompletion (multilingual)
+        # ——— 3) Fallback multilingual ChatCompletion —————————
+
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful assistant fluent in many languages. "
-                        "Detect and reply in the user's language."
-                    )
-                },
+                {"role": "system",
+                 "content": (
+                     "You are a helpful assistant fluent in many languages. "
+                     "Detect and reply in the user's language."
+                 )},
                 {"role": "user", "content": user_input}
             ],
             max_tokens=150
         )
         bot_text = resp.choices[0].message.content.strip()
 
+        # Speech output
         if output_type == "speech":
             fn = f"static/audio_{uuid.uuid4().hex}.mp3"
-            tts = client.audio.speech.create(
-                model="tts-1", voice="alloy", input=bot_text
-            )
+            tts = client.audio.speech.create(model="tts-1", voice="alloy", input=bot_text)
             tts.stream_to_file(fn)
             return jsonify({"response": bot_text, "audio_url": fn})
+
+        # Image generation
         if output_type == "image":
             img = client.images.generate(
                 model="dall-e-3",
@@ -253,17 +226,15 @@ def chat():
                 quality="standard",
                 n=1
             )
-            return jsonify({
-                "response": "Image generated",
-                "image_url": img.data[0].url
-            })
+            return jsonify({"response": "Image generated", "image_url": img.data[0].url})
 
+        # Default: text
         return jsonify({"response": bot_text})
 
-    except Exception as e:
-        # Log full traceback for debugging
+    except Exception:
         app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Server error: " + str(e)}), 500
+        return jsonify({"error": "Server error"}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
